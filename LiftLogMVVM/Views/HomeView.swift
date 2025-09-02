@@ -78,9 +78,11 @@ struct HomeView: View {
         ExerciseModel(name: "Lateral Raise", bodyPart: "Arms", category: "Cable"),
         ExerciseModel(name: "Cable Crossover", bodyPart: "Chest", category: "Cable"),
     ]
+    
     let sampleTemplates: [TemplateModel] = [
         TemplateModel(name: "Sample Push Day")
     ]
+    
     sampleTemplates[0].exercises = sampleExercises
     sampleTemplates.forEach { ctx.insert($0) }
     try? ctx.save()
