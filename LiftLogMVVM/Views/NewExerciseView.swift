@@ -159,7 +159,7 @@ extension NewExerciseView {
                             .fontWeight(.medium)
                             .foregroundColor(selectedBodyPart == bodyPart ? .white : .primary)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
+                            .padding(8)
                             .background(selectedBodyPart == bodyPart ? .blue : .gray.opacity(0.2))
                             .cornerRadius(8)
                     }

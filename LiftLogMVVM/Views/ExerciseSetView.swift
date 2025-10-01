@@ -83,7 +83,7 @@ struct ExerciseSetView: View {
             }
             .listStyle(.plain)
             .scrollDisabled(true)
-            .frame(height: CGFloat(sets.count * 48))
+            .frame(height: CGFloat(sets.count * 52))
             
             Button(action: {
                 addSets()
@@ -99,6 +99,11 @@ struct ExerciseSetView: View {
         }
         .padding(.vertical, 16)
         .cornerRadius(16)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            // Dismiss keyboard when tapping outside text fields
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
     }
 }
 

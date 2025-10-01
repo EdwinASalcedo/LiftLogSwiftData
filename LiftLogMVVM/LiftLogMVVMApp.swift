@@ -18,7 +18,7 @@ struct LiftLogMVVMApp: App {
             NavigationStack {
                 HomeView()
             }
-            .modelContainer(for: [ExerciseModel.self, ExerciseSetModel.self, TemplateModel.self])
+            .modelContainer(for: [ExerciseModel.self, ExerciseSetModel.self, TemplateModel.self, WorkoutSessionModel.self, ExerciseSessionModel.self, CompletedSetModel.self])
             //.environmentObject(vm)
         }
     }

@@ -21,7 +21,11 @@ struct HomeView: View {
     @State private var currentTemplate: TemplateModel? = nil
     @State private var workoutTitle: String = "Start Workout"
     @State private var showingFinishAlert: Bool = false
+    @State private var showingSaveTemplateAlert: Bool = false
     @State private var showingCancelAlert: Bool = false
+    @State private var workoutStartTime = Date()
+    @State private var showingHistory: Bool = false
+    @State private var templateName: String = ""
     
     var body: some View {
         ZStack {
@@ -41,17 +45,42 @@ struct HomeView: View {
             }
         }
         .sheet(isPresented: $showingAddExercise) {
-            AddExerciseView { selectedExercises in
-                addExercisesToWorkout(selectedExercises)
+            NavigationStack {
+                AddExerciseView { selectedExercises in
+                    addExercisesToWorkout(selectedExercises)
+                }
             }
+        }
+        .sheet(isPresented: $showingHistory) {
+            NavigationStack {
+                WorkoutHistoryView()
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .alert("Finish Workout?", isPresented: $showingFinishAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Finish") {
-                saveAndFinishWorkout()
+                //saveAndFinishWorkout()
+                templateName = workoutTitle
+                showingSaveTemplateAlert = true
             }
         } message: {
             Text("Great job! Your workout will be saved to your history.")
+        }
+        .alert("Save as Template?", isPresented: $showingSaveTemplateAlert) {
+            TextField("Template Name", text: $templateName)
+            Button("No thanks!", role: .cancel) {
+                saveAndFinishWorkout()
+                templateName = ""
+            }
+            Button("Save as Template") {
+                saveAndCreate()
+                templateName = ""
+            }
+        } message: {
+            Text("Save this workout as a template so you can perform it again in the future")
         }
         .alert("Cancel Workout", isPresented: $showingCancelAlert) {
             Button("Resume", role: .cancel) {}
@@ -66,7 +95,7 @@ struct HomeView: View {
 
 #Preview {
     let container = try! ModelContainer(
-        for: TemplateModel.self, ExerciseModel.self, ExerciseSetModel.self,
+        for: TemplateModel.self, ExerciseModel.self, ExerciseSetModel.self, WorkoutSessionModel.self, ExerciseSessionModel.self, CompletedSetModel.self,
         configurations: ModelConfiguration(isStoredInMemoryOnly: true)
     )
     let ctx = container.mainContext
@@ -112,15 +141,15 @@ extension HomeView {
                         
                         if !templates.isEmpty {
                             Divider()
-                        }
-                        
-                        ForEach(templates) { template in
-                            Button(template.name) {
-                                startNewWorkoutFromTemplate(template)
+                            
+                            ForEach(templates) { template in
+                                Button(template.name) {
+                                    // In case user started workout but switched mid way through
+                                    discardAndCancelWorkout()
+                                    startNewWorkoutFromTemplate(template)
+                                }
                             }
-                        }
-                        
-                        if templates.isEmpty {
+                        } else {
                             Button("No templates available") {
                                 
                             }
@@ -129,14 +158,29 @@ extension HomeView {
                     } label: {
                         Image(systemName: "chevron.down")
                             .font(.caption)
+                            .frame(width: 20, height: 20)
                             .foregroundColor(.secondary)
+                            //.background(.red)
                     }
+                    .menuStyle(.button)
+                    //.buttonStyle(.plain)
+                    .fixedSize()
                 }
                 
-                Text("\(Date().formatted(date: .abbreviated, time: .omitted))")
-                    .foregroundStyle(.secondary)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
+                HStack {
+                    Button(action: {
+                        showingHistory = true
+                    }) {
+                        Image(systemName: "calendar")
+                            .font(.title2)
+                            .foregroundColor(.primary)
+                    }
+                    
+                    Text("\(Date().formatted(date: .abbreviated, time: .omitted))")
+                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                }
             }
             
             Spacer()
@@ -321,19 +365,101 @@ extension HomeView {
         }
     }
     
-    private func saveAndFinishWorkout() {
+    private func createTemplateFromWorkout() {
+        guard !templateName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            print("Template name cannot be empty")
+            return
+        }
+            
         do {
+            // Create new template with user-provided name
+            let newTemplate = TemplateModel(name: templateName.trimmingCharacters(in: .whitespacesAndNewlines))
+            
+            newTemplate.exercises = workoutExercises
+            
+            modelContext.insert(newTemplate)
             try modelContext.save()
             
+            print("Template '\(templateName)' created successfully with \(workoutExercises.count) exercises!")
+            
+        } catch {
+            print("Error creating template: \(error)")
+        }
+    }
+    
+    private func saveAndFinishWorkout() {
+        do {
+            // Create workout session
+            let workoutSession = WorkoutSessionModel(
+                name: workoutTitle,
+                templateName: currentTemplate?.name
+            )
+            
+            // Set the start time from when workout began
+            workoutSession.startTime = workoutStartTime
+            
+            workoutSession.endTime = Date()
+            workoutSession.isCompleted = true
+            
+            // Create exercise sessions for each exercise in the workout
+            for exercise in workoutExercises {
+                let exerciseSession = ExerciseSessionModel(
+                    exerciseName: exercise.name,
+                    bodyPart: exercise.bodyPart,
+                    category: exercise.category
+                )
+                
+                // Get completed sets for this exercise
+                let completedSetsForExercise = currentWorkoutSets.filter { set in
+                    set.exercise?.id == exercise.id && set.isCompleted == true
+                }.sorted { $0.createdAt < $1.createdAt }
+                
+                // Create completed set records
+                for (index, set) in completedSetsForExercise.enumerated() {
+                    let completedSet = CompletedSetModel(
+                        reps: set.reps,
+                        weight: set.weight,
+                        setNumber: index + 1
+                    )
+                    completedSet.exerciseSession = exerciseSession
+                    exerciseSession.completedSets.append(completedSet)
+                    modelContext.insert(completedSet)
+                }
+                    
+                exerciseSession.workoutSession = workoutSession
+                workoutSession.exerciseSessions.append(exerciseSession)
+                modelContext.insert(exerciseSession)
+            }
+            
+            modelContext.insert(workoutSession)
+        
+            // Clean up temporary workout data
+            let setsToDelete = currentWorkoutSets
+            for set in setsToDelete {
+                modelContext.delete(set)
+            }
+            
+            try modelContext.save()
+            
+            // Reset to empty state
             withAnimation(.easeInOut(duration: 0.3)) {
                 isWorkoutInProgress = false
                 workoutExercises = []
                 currentTemplate = nil
                 workoutTitle = "Start Workout"
+                workoutStartTime = Date()
             }
+            
+            print("Workout saved to history successfully! Duration: \(workoutSession.formattedDuration)")
+            
         } catch {
             print("Error saving workout: \(error)")
         }
+    }
+    
+    private func saveAndCreate() {
+        createTemplateFromWorkout()
+        saveAndFinishWorkout()
     }
     
     private func discardAndCancelWorkout() {

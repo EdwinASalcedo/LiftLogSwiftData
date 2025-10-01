@@ -36,6 +36,11 @@ struct SetRowView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(exerciseSet.isCompleted ? .green.opacity(0.1) : .clear)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            // Dismiss keyboard when tapping outside text fields
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
         .onAppear {
             weightText = exerciseSet.weight == 0 ? "" : exerciseSet.weight.asDecimalWith2Decimals()
             repsText = exerciseSet.reps == 0 ? "" : "\(exerciseSet.reps)"

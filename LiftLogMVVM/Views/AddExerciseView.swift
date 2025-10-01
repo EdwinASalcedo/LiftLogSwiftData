@@ -45,8 +45,8 @@ struct AddExerciseView: View {
         }
     }
     
-    private var availableBodyParts: [String] = ["Chest","Legs","Arms","Back","Other",]
-    private var availableCategories: [String] = ["Barbell", "Dumbbell", "Machine", "Other",]
+    private var availableBodyParts: [String] = ["Chest","Legs","Arms","Back","Other", "Any Body Part"]
+    private var availableCategories: [String] = ["Barbell", "Dumbbell", "Machine", "Other", "Any Category"]
     
     var body: some View {
         ZStack{
@@ -297,7 +297,7 @@ struct ExerciseRowView: View {
             Spacer()
                 
             // Selection indicator
-            Image(systemName: isSelected ? "checkmark" : "empty")
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                 .foregroundColor(isSelected ? .green : .gray)
                 .font(.title3)
         }
