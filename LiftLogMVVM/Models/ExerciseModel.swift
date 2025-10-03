@@ -19,7 +19,7 @@ class ExerciseModel {
     @Relationship var exerciseSets: [ExerciseSetModel] = []
     
     // optional back pointer to template (one to many)
-    @Relationship(inverse: \TemplateModel.exercises) var template: TemplateModel?
+    @Relationship(inverse: \TemplateModel.exercises) var templates: [TemplateModel] = []
     
     init(name: String, bodyPart: String, category: String) {
         self.name = name

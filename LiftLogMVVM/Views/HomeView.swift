@@ -25,6 +25,7 @@ struct HomeView: View {
     @State private var showingCancelAlert: Bool = false
     @State private var workoutStartTime = Date()
     @State private var showingHistory: Bool = false
+    @State private var showingTemplateSelection: Bool = false
     @State private var templateName: String = ""
     
     var body: some View {
@@ -58,6 +59,19 @@ struct HomeView: View {
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showingTemplateSelection) {
+            TemplateSelectionView(
+                templates: templates,
+                onTemplateSelected: { template in
+                    if let template = template {
+                        discardAndCancelWorkout()
+                        startNewWorkoutFromTemplate(template)
+                    } else {
+                        startNewWorkout()
+                    }
+                }
+            )
         }
         .alert("Finish Workout?", isPresented: $showingFinishAlert) {
             Button("Cancel", role: .cancel) {}
@@ -133,37 +147,16 @@ extension HomeView {
                         .font(.headline)
                         .fontWeight(.heavy)
                     
-                    // Template Selection
-                    Menu {
-                        Button("Start Empty Workout") {
-                            startNewWorkout()
-                        }
-                        
-                        if !templates.isEmpty {
-                            Divider()
-                            
-                            ForEach(templates) { template in
-                                Button(template.name) {
-                                    // In case user started workout but switched mid way through
-                                    discardAndCancelWorkout()
-                                    startNewWorkoutFromTemplate(template)
-                                }
-                            }
-                        } else {
-                            Button("No templates available") {
-                                
-                            }
-                            .disabled(true)
-                        }
-                    } label: {
+                    // Template Selection Button
+                    Button(action: {
+                        showingTemplateSelection = true
+                    }) {
                         Image(systemName: "chevron.down")
                             .font(.caption)
                             .frame(width: 20, height: 20)
                             .foregroundColor(.secondary)
                             //.background(.red)
                     }
-                    .menuStyle(.button)
-                    //.buttonStyle(.plain)
                     .fixedSize()
                 }
                 
@@ -375,7 +368,10 @@ extension HomeView {
             // Create new template with user-provided name
             let newTemplate = TemplateModel(name: templateName.trimmingCharacters(in: .whitespacesAndNewlines))
             
-            newTemplate.exercises = workoutExercises
+            //newTemplate.exercises = workoutExercises
+            for exercise in workoutExercises {
+                newTemplate.exercises.append(exercise)
+            }
             
             modelContext.insert(newTemplate)
             try modelContext.save()
@@ -490,5 +486,117 @@ extension HomeView {
     
     private func removeExerciseFromWorkout(_ exercise: ExerciseModel) {
         workoutExercises.removeAll { $0.id == exercise.id }
+    }
+}
+
+// MARK: - Template Selection View
+struct TemplateSelectionView: View {
+    let templates: [TemplateModel]
+    let onTemplateSelected: (TemplateModel?) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @State private var templateToDelete: TemplateModel?
+    @State private var showingDeleteAlert = false
+    
+    var body: some View {
+        NavigationView {
+            List {
+                if !templates.isEmpty {
+                    Section("Templates") {
+                        ForEach(templates) { template in
+                            Button(action: {
+                                onTemplateSelected(template)
+                                dismiss()
+                            }) {
+                                HStack {
+                                    Image(systemName: "doc.text.fill")
+                                        .foregroundColor(.green)
+                                        .font(.title3)
+                                        .frame(height:.infinity)
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(template.name)
+                                            .font(.headline)
+                                            .foregroundColor(.primary)
+                                        
+                                        Text("\(template.exercises.count) exercise\(template.exercises.count == 1 ? "" : "s")")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            }
+                            .buttonStyle(.plain)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                // Delete Action
+                                Button(role: .destructive) {
+                                    templateToDelete = template
+                                    showingDeleteAlert = true
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Section("Templates") {
+                        HStack {
+                            Image(systemName: "doc.text")
+                                .foregroundColor(.gray)
+                                .font(.title3)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("No templates available")
+                                    .font(.headline)
+                                    .foregroundColor(.secondary)
+                                
+                                Text("Create templates by saving workouts")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+            .navigationTitle("Select Workout")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("X") {
+                        dismiss()
+                    }
+                }
+            }
+            .alert("Delete Template", isPresented: $showingDeleteAlert) {
+                Button("Cancel", role: .cancel) {
+                    templateToDelete = nil
+                }
+                Button("Delete", role: .destructive) {
+                    if let template = templateToDelete {
+                        deleteTemplate(template)
+                    }
+                    templateToDelete = nil
+                }
+            } message: {
+                if let template = templateToDelete {
+                    Text("Are you sure you want to delete '\(template.name)'? This action cannot be undone.")
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+    
+    private func deleteTemplate(_ template: TemplateModel) {
+        do {
+            modelContext.delete(template)
+            try modelContext.save()
+            print("Template '\(template.name)' deleted successfully")
+        } catch {
+            print("Error deleting template: \(error)")
+        }
     }
 }

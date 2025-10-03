@@ -15,6 +15,10 @@ struct AddExerciseView: View {
     @State private var selectedCategory: String = "Any Category"
     @State private var selectedExercises: Set<UUID> = []
     @State private var showingNewExercise: Bool = false
+    @State private var showingEditExercise: Bool = false
+    @State private var exerciseToEdit: ExerciseModel? = nil
+    @State private var showingDeleteAlert: Bool = false
+    @State private var exerciseToDelete: ExerciseModel? = nil
     
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -60,6 +64,25 @@ struct AddExerciseView: View {
             .padding(.top, 32)
             .sheet(isPresented: $showingNewExercise) {
                 NewExerciseView()
+            }
+            .sheet(isPresented: $showingEditExercise) {
+                if let exerciseToEdit = exerciseToEdit {
+                    EditExerciseView(exercise: exerciseToEdit)
+                }
+            }
+            .alert("Delete Exercise", isPresented: $showingDeleteAlert) {
+                Button("Cancel", role: .cancel) {
+                    exerciseToDelete = nil
+                }
+                Button("Delete", role: .destructive) {
+                    if let exerciseToDelete = exerciseToDelete {
+                        deleteExercise(exerciseToDelete)
+                    }
+                }
+            } message: {
+                if let exerciseToDelete = exerciseToDelete {
+                    Text("Are you sure you want to delete '\(exerciseToDelete.name)'? This action cannot be undone.")
+                }
             }
         }
     }
@@ -221,7 +244,7 @@ extension AddExerciseView {
     }
     
     private var exerciseList: some View {
-        ScrollView {
+        List {
             if filteredExercises.isEmpty {
                 VStack {
                     Image(systemName: "dumbbell.fill")
@@ -237,16 +260,39 @@ extension AddExerciseView {
                         .foregroundStyle(.secondary)
                 }
                 .padding(.top, 60)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.visible)
             } else {
-                VStack(spacing: 0) {
-                    ForEach(filteredExercises) { exercise in
-                        ExerciseRowView(exercise: exercise, isSelected: selectedExercises.contains(exercise.id)) {
-                            toggleExerciseSelection(exercise)
+                ForEach(filteredExercises) { exercise in
+                    ExerciseRowView(exercise: exercise, isSelected: selectedExercises.contains(exercise.id)) {
+                        toggleExerciseSelection(exercise)
+                    }
+                    .listRowBackground(selectedExercises.contains(exercise.id) ? Color.green.opacity(0.1) : Color.clear)
+                    .listRowSeparator(.visible)
+                    .listRowInsets(EdgeInsets())
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        // Delete Action
+                        Button(role: .destructive) {
+                            exerciseToDelete = exercise
+                            showingDeleteAlert = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
                         }
+                        
+                        // Edit Action
+                        Button {
+                            exerciseToEdit = exercise
+                            showingEditExercise = true
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .tint(.blue)
                     }
                 }
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
     }
     
     private func toggleExerciseSelection(_ exercise: ExerciseModel) {
@@ -261,6 +307,31 @@ extension AddExerciseView {
         let exercisesToAdd = allExercises.filter { selectedExercises.contains($0.id) }
         onExercisesSelected?(exercisesToAdd)
         dismiss()
+    }
+    
+    private func deleteExercise(_ exercise: ExerciseModel) {
+        withAnimation(.smooth) {
+            // Remove from selected exercises if it was selected
+            selectedExercises.remove(exercise.id)
+            
+            // Delete all related exercise sets first
+            for set in exercise.exerciseSets {
+                modelContext.delete(set)
+            }
+            
+            // Delete the exercise
+            modelContext.delete(exercise)
+            
+            do {
+                try modelContext.save()
+                print("Exercise '\(exercise.name)' deleted successfully")
+            } catch {
+                print("Failed to delete exercise: \(error)")
+            }
+        }
+        
+        // Clear the reference
+        exerciseToDelete = nil
     }
 
 }
@@ -302,13 +373,84 @@ struct ExerciseRowView: View {
                 .font(.title3)
         }
         .padding(.horizontal)
-        .padding(.vertical, 8)
+        .padding(.vertical, 12)
         .contentShape(Rectangle())
-        .background(isSelected ? .green.opacity(0.1) : .clear)
         .onTapGesture {
             onTap()
         }
+    }
+}
+
+// MARK: - Edit Exercise View
+struct EditExerciseView: View {
+    @Bindable var exercise: ExerciseModel
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
     
-    Divider()
+    @State private var exerciseName: String = ""
+    @State private var selectedBodyPart: String = ""
+    @State private var selectedCategory: String = ""
+    
+    private let availableBodyParts: [String] = ["Chest", "Legs", "Arms", "Back", "Other"]
+    private let availableCategories: [String] = ["Barbell", "Dumbbell", "Machine", "Other"]
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Exercise Details") {
+                    TextField("Exercise Name", text: $exerciseName)
+                        .autocapitalization(.words)
+                    
+                    Picker("Body Part", selection: $selectedBodyPart) {
+                        ForEach(availableBodyParts, id: \.self) { bodyPart in
+                            Text(bodyPart).tag(bodyPart)
+                        }
+                    }
+                    
+                    Picker("Category", selection: $selectedCategory) {
+                        ForEach(availableCategories, id: \.self) { category in
+                            Text(category).tag(category)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Edit Exercise")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") {
+                        saveExercise()
+                    }
+                    .disabled(exerciseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .onAppear {
+            exerciseName = exercise.name
+            selectedBodyPart = exercise.bodyPart
+            selectedCategory = exercise.category
+        }
+    }
+    
+    private func saveExercise() {
+        withAnimation(.smooth) {
+            exercise.name = exerciseName.trimmingCharacters(in: .whitespacesAndNewlines)
+            exercise.bodyPart = selectedBodyPart
+            exercise.category = selectedCategory
+            
+            do {
+                try modelContext.save()
+                dismiss()
+                print("Exercise updated successfully")
+            } catch {
+                print("Failed to save exercise: \(error)")
+            }
+        }
     }
 }
